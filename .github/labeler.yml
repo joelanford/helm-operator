@@ -4,19 +4,25 @@ area/main-binary:
 area/sdk:
   - any:
     - 'pkg/**/*'
-    - '!pkg/plugin/**/*'
+    - '!pkg/plugins/**/*'
 area/plugin:
-  - 'pkg/plugin/**/*'
+  - 'pkg/plugins/**/*'
 area/infra:
+  - '.gitignore'
   - '.github/**/*'
-  - 'Makefile'
   - '.goreleaser.yml'
   - '.golangci.yml'
+  - 'tools/scripts/**/*'
+  - 'Makefile'
+  - 'Dockerfile'
 area/deps:
   - 'go.mod'
   - 'go.sum'
 area/docs:
-  - 'README.md'
+  - '**/*.md'
+  - 'LICENSE'
 area/testing:
   - '**/*_test.go'
   - '**/testdata/**/*'
+area/sample:
+  - 'example/**/*'
