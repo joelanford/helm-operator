@@ -80,7 +80,7 @@ func (c *chunkedSecrets) Create(key string, rls *release.Release) error {
 	}
 
 	for i, ch := range chunks[1:] {
-		chunkSecret := c.chunkSecretFromChunk(indexSecret, ch)
+		chunkSecret := c.chunkSecretFromChunk(rls, indexSecret, ch)
 		chunkSecret.Labels["createdAt"] = strconv.Itoa(int(createdAt.Unix()))
 		if _, err := c.client.Create(context.Background(), chunkSecret, metav1.CreateOptions{}); err != nil {
 			return fmt.Errorf("create: failed to create chunk secret %d of %d %q: %w", i+2, len(chunks), ch.name, err)
@@ -175,8 +175,8 @@ func (c *chunkedSecrets) indexSecretFromChunks(key string, rls *release.Release,
 	return indexSecret
 }
 
-func (c *chunkedSecrets) chunkSecretFromChunk(indexSecret *corev1.Secret, ch chunk) *corev1.Secret {
-	chunkLabels := newChunkLabels(c.owner, indexSecret.Name)
+func (c *chunkedSecrets) chunkSecretFromChunk(rls *release.Release, indexSecret *corev1.Secret, ch chunk) *corev1.Secret {
+	chunkLabels := newChunkLabels(c.owner, indexSecret.Name, rls)
 	chunkSecret := &corev1.Secret{
 		Type: SecretTypeChunkedChunk,
 		ObjectMeta: metav1.ObjectMeta{
@@ -223,7 +223,7 @@ func (c *chunkedSecrets) Update(key string, rls *release.Release) error {
 	}
 
 	// Delete the existing chunk secrets
-	if err := c.client.DeleteCollection(context.Background(), metav1.DeleteOptions{}, metav1.ListOptions{LabelSelector: newListChunksForKeySelector(c.owner, existingIndex.Name).String()}); err != nil {
+	if err := c.client.DeleteCollection(context.Background(), metav1.DeleteOptions{}, metav1.ListOptions{LabelSelector: newListChunksForKeySelector(c.owner, existingIndex.Name, rls).String()}); err != nil {
 		return fmt.Errorf("update: failed to delete previous chunk secrets for key %q: %w", key, err)
 	}
 
@@ -246,7 +246,7 @@ func (c *chunkedSecrets) Update(key string, rls *release.Release) error {
 
 	// Create the new chunks
 	for i, ch := range chunks[1:] {
-		chunkSecret := c.chunkSecretFromChunk(updatedIndexSecret, ch)
+		chunkSecret := c.chunkSecretFromChunk(rls, updatedIndexSecret, ch)
 		if _, err := c.client.Create(context.Background(), chunkSecret, metav1.CreateOptions{}); err != nil {
 			return fmt.Errorf("create: failed to create chunk secret %d of %d %q: %w", i+2, len(chunks), ch.name, err)
 		}
@@ -265,7 +265,7 @@ func (c *chunkedSecrets) Delete(key string) (*release.Release, error) {
 		}
 		return nil, fmt.Errorf("delete: %w", err)
 	}
-	if err := c.client.DeleteCollection(context.Background(), metav1.DeleteOptions{}, metav1.ListOptions{LabelSelector: newListAllForKeySelector(c.owner, key).String()}); err != nil {
+	if err := c.client.DeleteCollection(context.Background(), metav1.DeleteOptions{}, metav1.ListOptions{LabelSelector: newListAllForKeySelector(c.owner, key, rls).String()}); err != nil {
 		return nil, fmt.Errorf("delete: failed to delete index secret %q: %w", indexSecret.Name, err)
 	}
 	return rls, nil
