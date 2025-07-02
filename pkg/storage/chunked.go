@@ -309,7 +309,7 @@ func (c *chunkedSecrets) List(filter func(*release.Release) bool) ([]*release.Re
 		indexSecret := indexSecret
 		rls, err := c.decodeRelease(context.Background(), &indexSecret)
 		if err != nil {
-			return nil, fmt.Errorf("list: failed to decode release for key %q: %w", indexSecret.Labels["key"], err)
+			return nil, fmt.Errorf("list: failed to decode release for key %q: %w", indexSecret.Name, err)
 		}
 		rls.Labels = indexSecret.Labels
 		if filter(rls) {
@@ -325,6 +325,10 @@ func (c *chunkedSecrets) Query(queryLabels map[string]string) ([]*release.Releas
 			// Helm hardcodes some queries with owner=helm. We'll translate this
 			// to use our owner value
 			queryLabels[k] = c.owner
+		}
+		// Ensure the "key" label value aligns to the label-safe key format
+		if k == "key" {
+			queryLabels[k] = labelSafeKey(v)
 		}
 	}
 	c.Log("query: labels=%v", queryLabels)

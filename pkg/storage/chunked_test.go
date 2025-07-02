@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"maps"
+	"strings"
 
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
@@ -49,6 +50,28 @@ var _ = Describe("chunkedSecrets", func() {
 			Expect(chunkedDriver.Create(releaseKey(rel), rel)).To(Succeed())
 			verifySecrets(secretInterface, 1)
 		})
+		It("should create a release with a key longer than 63 characters", func() {
+			// Create a release with a name that's within Helm's 53-char limit but results in a key >63 characters
+			// The key format is typically "{name}.v{version}", so we need name + ".v" + version > 63
+			rel := genRelease(strings.Repeat("a", 53), 1, release.StatusPendingInstall, nil, chunkSize/2)
+			longKey := releaseKey(rel)
+
+			// Verify the key is indeed longer than 63 characters
+			Expect(len(longKey)).To(BeNumerically(">", 63))
+
+			// Create should succeed even with long key
+			Expect(chunkedDriver.Create(longKey, rel)).To(Succeed())
+			verifySecrets(secretInterface, 1)
+
+			// Verify the secret has the hashed key in labels and the secret name is the original key
+			secrets, err := secretInterface.List(context.Background(), metav1.ListOptions{})
+			Expect(err).ToNot(HaveOccurred())
+			Expect(secrets.Items).To(HaveLen(1))
+
+			secret := secrets.Items[0]
+			Expect(secret.Labels["key"]).To(MatchRegexp("^[0-9a-f]{63}$")) // Should be 63 hex characters
+			Expect(secret.Name).To(Equal(longKey))                         // Secret name should be the original key
+		})
 		It("should fail if the release already exists", func() {
 			rel := genRelease("test-release", 1, release.StatusPendingInstall, nil, chunkSize/2)
 			Expect(chunkedDriver.Create(releaseKey(rel), rel)).To(Succeed())
@@ -75,6 +98,18 @@ var _ = Describe("chunkedSecrets", func() {
 			expected := genRelease("test-release", 1, release.StatusPendingInstall, nil, chunkSize/2)
 			Expect(chunkedDriver.Create(releaseKey(expected), expected)).To(Succeed())
 			actual, err := chunkedDriver.Get(releaseKey(expected))
+			Expect(err).ToNot(HaveOccurred())
+			Expect(actual).To(Equal(expected))
+		})
+		It("should get a release with a key longer than 63 characters", func() {
+			expected := genRelease(strings.Repeat("a", 53), 1, release.StatusPendingInstall, nil, chunkSize/2)
+			longKey := releaseKey(expected)
+
+			// Verify the key is indeed longer than 63 characters
+			Expect(len(longKey)).To(BeNumerically(">", 63))
+
+			Expect(chunkedDriver.Create(longKey, expected)).To(Succeed())
+			actual, err := chunkedDriver.Get(longKey)
 			Expect(err).ToNot(HaveOccurred())
 			Expect(actual).To(Equal(expected))
 		})
@@ -132,6 +167,26 @@ var _ = Describe("chunkedSecrets", func() {
 			rel = genRelease("test-release", 1, release.StatusDeployed, nil, chunkSize*4)
 			Expect(chunkedDriver.Update(releaseKey(rel), rel)).To(MatchError(ContainSubstring("release too large")))
 		})
+		It("should update a release with a key longer than 63 characters", func() {
+			rel := genRelease(strings.Repeat("a", 53), 1, release.StatusPendingInstall, nil, chunkSize/2)
+			longKey := releaseKey(rel)
+
+			// Verify the key is indeed longer than 63 characters
+			Expect(len(longKey)).To(BeNumerically(">", 63))
+
+			Expect(chunkedDriver.Create(longKey, rel)).To(Succeed())
+			verifySecrets(secretInterface, 1)
+
+			// Change the status to produce a release with the same key, but different content.
+			rel.Info.Status = release.StatusDeployed
+			Expect(chunkedDriver.Update(longKey, rel)).To(Succeed())
+			verifySecrets(secretInterface, 1)
+
+			// Verify we can still get the updated release
+			updated, err := chunkedDriver.Get(longKey)
+			Expect(err).ToNot(HaveOccurred())
+			Expect(updated.Info.Status).To(Equal(release.StatusDeployed))
+		})
 	})
 
 	var _ = Describe("Delete", func() {
@@ -173,6 +228,21 @@ var _ = Describe("chunkedSecrets", func() {
 			_, err := maxReadDriver.Delete(releaseKey(rel))
 			Expect(err).To(MatchError(ContainSubstring("release too large")))
 		})
+		It("should delete a release with a key longer than 63 characters", func() {
+			expected := genRelease(strings.Repeat("a", 53), 1, release.StatusPendingInstall, nil, chunkSize/2)
+			longKey := releaseKey(expected)
+
+			// Verify the key is indeed longer than 63 characters
+			Expect(len(longKey)).To(BeNumerically(">", 63))
+
+			Expect(chunkedDriver.Create(longKey, expected)).To(Succeed())
+			verifySecrets(secretInterface, 1)
+
+			actual, err := chunkedDriver.Delete(longKey)
+			Expect(err).ToNot(HaveOccurred())
+			Expect(actual).To(Equal(expected))
+			verifySecrets(secretInterface, 0)
+		})
 	})
 
 	var _ = Describe("List", func() {
@@ -186,6 +256,10 @@ var _ = Describe("chunkedSecrets", func() {
 				genRelease("b", 1, release.StatusSuperseded, nil, chunkSize*2),
 				genRelease("b", 2, release.StatusSuperseded, nil, chunkSize*2),
 				genRelease("b", 3, release.StatusDeployed, nil, chunkSize/2),
+
+				// Add a release with a long key
+				genRelease(strings.Repeat("c", 53), 1, release.StatusSuperseded, nil, chunkSize/2),
+				genRelease(strings.Repeat("c", 53), 2, release.StatusDeployed, nil, chunkSize*2),
 			}
 			for _, rel := range releases {
 				Expect(chunkedDriver.Create(releaseKey(rel), rel)).To(Succeed())
@@ -204,15 +278,25 @@ var _ = Describe("chunkedSecrets", func() {
 				return rel.Info.Status == release.StatusDeployed
 			})
 			Expect(err).ToNot(HaveOccurred())
-			Expect(deployedReleases).To(HaveLen(2))
+			Expect(deployedReleases).To(HaveLen(3)) // Now 3 deployed releases (a.4, b.3, and long key release)
 		})
 
 		It("should return an empty list if no releases match", func() {
 			cReleases, err := chunkedDriver.List(func(rel *release.Release) bool {
-				return rel.Name == "c"
+				return rel.Name == "z"
 			})
 			Expect(err).ToNot(HaveOccurred())
 			Expect(cReleases).To(BeEmpty())
+		})
+
+		It("should list releases with long keys", func() {
+			longKeyReleases, err := chunkedDriver.List(func(rel *release.Release) bool {
+				return rel.Name == strings.Repeat("c", 53)
+			})
+			Expect(err).ToNot(HaveOccurred())
+			Expect(longKeyReleases).To(HaveLen(2))
+			Expect(longKeyReleases[0].Version).To(Equal(1))
+			Expect(longKeyReleases[1].Version).To(Equal(2))
 		})
 
 		It("should fail if any release is too large", func() {
@@ -238,6 +322,10 @@ var _ = Describe("chunkedSecrets", func() {
 				genRelease("b", 1, release.StatusSuperseded, nil, chunkSize*2),
 				genRelease("b", 2, release.StatusSuperseded, nil, chunkSize*2),
 				genRelease("b", 3, release.StatusDeployed, map[string]string{"key1": "val1"}, chunkSize/2),
+
+				// Add a release with a long key and custom labels
+				genRelease(strings.Repeat("c", 53), 1, release.StatusSuperseded, map[string]string{"env": "prod", "team": "platform"}, chunkSize/2),
+				genRelease(strings.Repeat("c", 53), 2, release.StatusDeployed, map[string]string{"env": "prod", "team": "platform"}, chunkSize*2),
 			}
 			for _, rel := range releases {
 				Expect(chunkedDriver.Create(releaseKey(rel), rel)).To(Succeed())
@@ -248,6 +336,44 @@ var _ = Describe("chunkedSecrets", func() {
 			key1Releases, err := chunkedDriver.Query(map[string]string{"key1": "val1"})
 			Expect(err).ToNot(HaveOccurred())
 			Expect(key1Releases).To(HaveLen(1))
+		})
+
+		It("should query releases with long keys by custom labels", func() {
+			// Query by custom label
+			envReleases, err := chunkedDriver.Query(map[string]string{"env": "prod"})
+			Expect(err).ToNot(HaveOccurred())
+			Expect(envReleases).To(HaveLen(2)) // Now 2 releases with env=prod (c.1 and c.2)
+			Expect(envReleases[0].Name).To(Equal(strings.Repeat("c", 53)))
+			Expect(envReleases[1].Name).To(Equal(strings.Repeat("c", 53)))
+
+			// Query by multiple labels
+			teamEnvReleases, err := chunkedDriver.Query(map[string]string{"env": "prod", "team": "platform"})
+			Expect(err).ToNot(HaveOccurred())
+			Expect(teamEnvReleases).To(HaveLen(2)) // Now 2 releases with both labels
+			Expect(teamEnvReleases[0].Name).To(Equal(strings.Repeat("c", 53)))
+			Expect(teamEnvReleases[1].Name).To(Equal(strings.Repeat("c", 53)))
+		})
+
+		It("should query releases by the original key even when hashed in labels", func() {
+			longKey := releaseKey(&release.Release{Name: strings.Repeat("c", 53), Version: 2})
+
+			// Verify the key is indeed longer than 63 characters
+			Expect(len(longKey)).To(BeNumerically(">", 63))
+
+			// Query using the original key (not the hashed version)
+			keyReleases, err := chunkedDriver.Query(map[string]string{"key": longKey})
+			Expect(err).ToNot(HaveOccurred())
+			Expect(keyReleases).To(HaveLen(1))
+			Expect(keyReleases[0].Name).To(Equal(strings.Repeat("c", 53)))
+			Expect(keyReleases[0].Version).To(Equal(2))
+
+			// Get the secret (we expect it to be named the same as the long release key)
+			secret, err := secretInterface.Get(context.Background(), longKey, metav1.GetOptions{})
+			Expect(err).ToNot(HaveOccurred())
+
+			Expect(secret).ToNot(BeNil())
+			Expect(secret.Labels["key"]).ToNot(Equal(longKey))             // Should NOT be the original key
+			Expect(secret.Labels["key"]).To(MatchRegexp("^[0-9a-f]{63}$")) // Should be 63 hex characters
 		})
 
 		It("should return ErrReleaseNotFound when there is no match", func() {
@@ -283,7 +409,7 @@ var _ = Describe("chunkedSecrets", func() {
 		It("should translate owner=helm to owner=test-owner", func() {
 			allReleases, err := chunkedDriver.Query(map[string]string{"owner": "helm"})
 			Expect(err).ToNot(HaveOccurred())
-			Expect(allReleases).To(HaveLen(7))
+			Expect(allReleases).To(HaveLen(9)) // Now 9 releases total (7 original + 2 long key releases)
 		})
 	})
 })
@@ -328,7 +454,7 @@ func verifySecrets(secretInterface clientcorev1.SecretInterface, expected int) {
 }
 
 func releaseKey(rel *release.Release) string {
-	return fmt.Sprintf("%s.v%d", rel.Name, rel.Version)
+	return fmt.Sprintf("sh.helm.release.v1.%s.v%d", rel.Name, rel.Version)
 }
 
 func genRelease(name string, version int, status release.Status, extraLabels map[string]string, minSize int) *release.Release {
