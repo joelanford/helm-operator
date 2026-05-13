@@ -18,18 +18,18 @@ package hook
 
 import (
 	"github.com/go-logr/logr"
-	"helm.sh/helm/v3/pkg/chartutil"
-	"helm.sh/helm/v3/pkg/release"
+	"helm.sh/helm/v4/pkg/chart/common"
+	release "helm.sh/helm/v4/pkg/release/v1"
 	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
 )
 
 type PreHook interface {
-	Exec(*unstructured.Unstructured, chartutil.Values, logr.Logger) error
+	Exec(*unstructured.Unstructured, common.Values, logr.Logger) error
 }
 
-type PreHookFunc func(*unstructured.Unstructured, chartutil.Values, logr.Logger) error
+type PreHookFunc func(*unstructured.Unstructured, common.Values, logr.Logger) error
 
-func (f PreHookFunc) Exec(obj *unstructured.Unstructured, vals chartutil.Values, log logr.Logger) error {
+func (f PreHookFunc) Exec(obj *unstructured.Unstructured, vals common.Values, log logr.Logger) error {
 	return f(obj, vals, log)
 }
 

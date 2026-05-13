@@ -5,9 +5,9 @@ import (
 	"fmt"
 
 	sdkhandler "github.com/operator-framework/operator-lib/handler"
-	"helm.sh/helm/v3/pkg/action"
-	"helm.sh/helm/v3/pkg/kube"
-	"helm.sh/helm/v3/pkg/postrender"
+	"helm.sh/helm/v4/pkg/action"
+	"helm.sh/helm/v4/pkg/kube"
+	"helm.sh/helm/v4/pkg/postrenderer"
 	"k8s.io/apimachinery/pkg/api/meta"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
@@ -22,12 +22,12 @@ import (
 
 // PostRendererProvider is a function that returns a post-renderer for a given object.
 // obj represents the custom resource that is being reconciled.
-type PostRendererProvider func(rm meta.RESTMapper, kubeClient kube.Interface, obj client.Object) postrender.PostRenderer
+type PostRendererProvider func(rm meta.RESTMapper, kubeClient kube.Interface, obj client.Object) postrenderer.PostRenderer
 
 // WithInstallPostRenderer sets the post-renderer to use for the install.
 // It overrides any post-renderer that may already be configured or set
 // as a default.
-func WithInstallPostRenderer(pr postrender.PostRenderer) InstallOption {
+func WithInstallPostRenderer(pr postrenderer.PostRenderer) InstallOption {
 	return func(i *action.Install) error {
 		i.PostRenderer = pr
 		return nil
@@ -38,7 +38,7 @@ func WithInstallPostRenderer(pr postrender.PostRenderer) InstallOption {
 // of post-renderers configured for the install. This function should be used
 // instead of WithInstallPostRenderer if you want to inherit the default set
 // of post-renderers configured by an ActionClientGetter.
-func AppendInstallPostRenderer(pr postrender.PostRenderer) InstallOption {
+func AppendInstallPostRenderer(pr postrenderer.PostRenderer) InstallOption {
 	return func(a *action.Install) error {
 		a.PostRenderer = appendPostRenderer(a.PostRenderer, pr)
 		return nil
@@ -48,7 +48,7 @@ func AppendInstallPostRenderer(pr postrender.PostRenderer) InstallOption {
 // WithUpgradePostRenderer sets the post-renderer to use for the upgrade.
 // It overrides any post-renderer that may already be configured or set
 // as a default.
-func WithUpgradePostRenderer(pr postrender.PostRenderer) UpgradeOption {
+func WithUpgradePostRenderer(pr postrenderer.PostRenderer) UpgradeOption {
 	return func(a *action.Upgrade) error {
 		a.PostRenderer = pr
 		return nil
@@ -59,14 +59,14 @@ func WithUpgradePostRenderer(pr postrender.PostRenderer) UpgradeOption {
 // of post-renderers configured for the upgrade. This function should be used
 // instead of WithUpgradePostRenderer if you want to inherit the default set
 // of post-renderers configured by an ActionClientGetter.
-func AppendUpgradePostRenderer(pr postrender.PostRenderer) UpgradeOption {
+func AppendUpgradePostRenderer(pr postrenderer.PostRenderer) UpgradeOption {
 	return func(a *action.Upgrade) error {
 		a.PostRenderer = appendPostRenderer(a.PostRenderer, pr)
 		return nil
 	}
 }
 
-func appendPostRenderer(pr postrender.PostRenderer, extra postrender.PostRenderer) postrender.PostRenderer {
+func appendPostRenderer(pr postrenderer.PostRenderer, extra postrenderer.PostRenderer) postrenderer.PostRenderer {
 	if pr == nil {
 		return extra
 	}
@@ -88,11 +88,11 @@ func (f PostRendererFunc) Run(buffer *bytes.Buffer) (*bytes.Buffer, error) {
 // DefaultPostRendererFunc returns a post-renderer that applies owner references to compatible objects
 // in a helm release manifest. This is the default post-renderer used by ActionClients created with
 // NewActionClientGetter.
-var DefaultPostRendererFunc = func(rm meta.RESTMapper, kubeClient kube.Interface, owner client.Object) postrender.PostRenderer {
+var DefaultPostRendererFunc = func(rm meta.RESTMapper, kubeClient kube.Interface, owner client.Object) postrenderer.PostRenderer {
 	return &ownerPostRenderer{rm, kubeClient, owner}
 }
 
-type chainedPostRenderer []postrender.PostRenderer
+type chainedPostRenderer []postrenderer.PostRenderer
 
 func (prs chainedPostRenderer) Run(in *bytes.Buffer) (*bytes.Buffer, error) {
 	var (

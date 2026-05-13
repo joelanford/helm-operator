@@ -5,9 +5,9 @@ import (
 
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
-	"helm.sh/helm/v3/pkg/action"
-	"helm.sh/helm/v3/pkg/kube"
-	"helm.sh/helm/v3/pkg/postrender"
+	"helm.sh/helm/v4/pkg/action"
+	"helm.sh/helm/v4/pkg/kube"
+	"helm.sh/helm/v4/pkg/postrenderer"
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/client-go/discovery"
 	"k8s.io/client-go/discovery/cached/memory"
@@ -21,7 +21,7 @@ import (
 var _ = Describe("chainedPostRenderer", func() {
 	var (
 		cpr           chainedPostRenderer
-		pr1, pr2, pr3 postrender.PostRenderer
+		pr1, pr2, pr3 postrenderer.PostRenderer
 	)
 	BeforeEach(func() {
 		cpr = nil
@@ -73,7 +73,7 @@ var _ = Describe("chainedPostRenderer", func() {
 var _ = Describe("PostRender install options", func() {
 	var (
 		install *action.Install
-		add     postrender.PostRenderer
+		add     postrenderer.PostRenderer
 	)
 
 	BeforeEach(func() {
@@ -118,7 +118,7 @@ var _ = Describe("PostRender install options", func() {
 var _ = Describe("PostRender upgrade options", func() {
 	var (
 		upgrade *action.Upgrade
-		add     postrender.PostRenderer
+		add     postrenderer.PostRenderer
 	)
 
 	BeforeEach(func() {

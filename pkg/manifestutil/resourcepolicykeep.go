@@ -19,7 +19,7 @@ package manifestutil
 import (
 	"strings"
 
-	"helm.sh/helm/v3/pkg/kube"
+	"helm.sh/helm/v4/pkg/kube"
 )
 
 func HasResourcePolicyKeep(annotations map[string]string) bool {

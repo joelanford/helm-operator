@@ -14,9 +14,11 @@ import (
 	"sync"
 	"time"
 
+	internalrelease "github.com/operator-framework/helm-operator-plugins/pkg/internal/release"
 	"github.com/pkg/errors"
-	"helm.sh/helm/v3/pkg/release"
-	"helm.sh/helm/v3/pkg/storage/driver"
+	helmrelease "helm.sh/helm/v4/pkg/release"
+	release "helm.sh/helm/v4/pkg/release/v1"
+	"helm.sh/helm/v4/pkg/storage/driver"
 	corev1 "k8s.io/api/core/v1"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -59,7 +61,11 @@ type chunkedSecrets struct {
 	hashEncoding *base32.Encoding
 }
 
-func (c *chunkedSecrets) Create(key string, rls *release.Release) error {
+func (c *chunkedSecrets) Create(key string, rlsi helmrelease.Releaser) error {
+	rls, err := internalrelease.ToV1(rlsi)
+	if err != nil {
+		return fmt.Errorf("create: %w", err)
+	}
 	c.Log("create: %q", key)
 	defer c.Log("created: %q", key)
 
@@ -212,7 +218,11 @@ func (c *chunkedSecrets) getIndex(ctx context.Context, key string) (*corev1.Secr
 	return indexSecret, nil
 }
 
-func (c *chunkedSecrets) Update(key string, rls *release.Release) error {
+func (c *chunkedSecrets) Update(key string, rlsi helmrelease.Releaser) error {
+	rls, err := internalrelease.ToV1(rlsi)
+	if err != nil {
+		return fmt.Errorf("update: %w", err)
+	}
 	c.Log("update: %q", key)
 	defer c.Log("updated: %q", key)
 
@@ -254,7 +264,7 @@ func (c *chunkedSecrets) Update(key string, rls *release.Release) error {
 	return nil
 }
 
-func (c *chunkedSecrets) Delete(key string) (*release.Release, error) {
+func (c *chunkedSecrets) Delete(key string) (helmrelease.Releaser, error) {
 	c.Log("delete: %q", key)
 	defer c.Log("deleted: %q", key)
 
@@ -284,7 +294,7 @@ func (c *chunkedSecrets) getIndexAndRelease(key string) (*corev1.Secret, *releas
 	return indexSecret, rls, nil
 }
 
-func (c *chunkedSecrets) Get(key string) (*release.Release, error) {
+func (c *chunkedSecrets) Get(key string) (helmrelease.Releaser, error) {
 	c.Log("get: %q", key)
 	defer c.Log("got: %q", key)
 
@@ -295,7 +305,7 @@ func (c *chunkedSecrets) Get(key string) (*release.Release, error) {
 	return rls, nil
 }
 
-func (c *chunkedSecrets) List(filter func(*release.Release) bool) ([]*release.Release, error) {
+func (c *chunkedSecrets) List(filter func(helmrelease.Releaser) bool) ([]helmrelease.Releaser, error) {
 	c.Log("list")
 	defer c.Log("listed")
 
@@ -304,7 +314,7 @@ func (c *chunkedSecrets) List(filter func(*release.Release) bool) ([]*release.Re
 		return nil, fmt.Errorf("list: %w", err)
 	}
 
-	var results []*release.Release
+	var results []helmrelease.Releaser
 	for _, indexSecret := range indexSecrets.Items {
 		indexSecret := indexSecret
 		rls, err := c.decodeRelease(context.Background(), &indexSecret)
@@ -319,7 +329,7 @@ func (c *chunkedSecrets) List(filter func(*release.Release) bool) ([]*release.Re
 	return results, nil
 }
 
-func (c *chunkedSecrets) Query(queryLabels map[string]string) ([]*release.Release, error) {
+func (c *chunkedSecrets) Query(queryLabels map[string]string) ([]helmrelease.Releaser, error) {
 	for k, v := range queryLabels {
 		if k == "owner" && v == "helm" {
 			// Helm hardcodes some queries with owner=helm. We'll translate this
@@ -356,7 +366,7 @@ func (c *chunkedSecrets) Query(queryLabels map[string]string) ([]*release.Releas
 	}
 
 	// Pass 2: decode the releases that matched the server selector and filter based on the client selector
-	results := make([]*release.Release, 0, len(indexSecrets.Items))
+	results := make([]helmrelease.Releaser, 0, len(indexSecrets.Items))
 	clientSelector := clientSelectorSet.AsSelector()
 	for _, indexSecret := range indexSecrets.Items {
 		indexSecret := indexSecret

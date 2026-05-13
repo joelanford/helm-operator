@@ -21,7 +21,7 @@ import (
 
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
-	"helm.sh/helm/v3/pkg/chartutil"
+	"helm.sh/helm/v4/pkg/chart/common"
 	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
 
 	. "github.com/operator-framework/helm-operator-plugins/pkg/reconciler/internal/values"
@@ -77,7 +77,7 @@ var _ = Describe("ApplyOverrides", func() {
 
 var _ = Describe("DefaultMapper", func() {
 	It("returns values untouched", func() {
-		in := chartutil.Values{"foo": map[string]interface{}{"bar": "baz"}}
+		in := common.Values{"foo": map[string]interface{}{"bar": "baz"}}
 		out := DefaultMapper.Map(in)
 		Expect(out).To(Equal(in))
 	})
@@ -96,6 +96,6 @@ var _ = Describe("DefaultTranslator", func() {
 
 	AfterEach(func() {
 		u := &unstructured.Unstructured{Object: map[string]interface{}{"spec": m}}
-		Expect(DefaultTranslator.Translate(context.Background(), u)).To(Equal(chartutil.Values(m)))
+		Expect(DefaultTranslator.Translate(context.Background(), u)).To(Equal(common.Values(m)))
 	})
 })

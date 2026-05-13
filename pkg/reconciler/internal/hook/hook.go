@@ -21,8 +21,8 @@ import (
 
 	"github.com/go-logr/logr"
 	sdkhandler "github.com/operator-framework/operator-lib/handler"
-	"helm.sh/helm/v3/pkg/release"
-	"helm.sh/helm/v3/pkg/releaseutil"
+	release "helm.sh/helm/v4/pkg/release/v1"
+	relutil "helm.sh/helm/v4/pkg/release/v1/util"
 	"k8s.io/apimachinery/pkg/api/meta"
 	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
 	"k8s.io/apimachinery/pkg/runtime"
@@ -64,7 +64,7 @@ func (d *dependentResourceWatcher) Exec(owner *unstructured.Unstructured, rel re
 	// using predefined functions for filtering events
 	dependentPredicate := predicate.DependentPredicateFuncs()
 
-	resources := releaseutil.SplitManifests(rel.Manifest)
+	resources := relutil.SplitManifests(rel.Manifest)
 	d.m.Lock()
 	defer d.m.Unlock()
 	for _, r := range resources {

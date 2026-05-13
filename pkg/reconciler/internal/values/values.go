@@ -22,8 +22,8 @@ import (
 	"os"
 	"time"
 
-	"helm.sh/helm/v3/pkg/chartutil"
-	"helm.sh/helm/v3/pkg/strvals"
+	"helm.sh/helm/v4/pkg/chart/common"
+	"helm.sh/helm/v4/pkg/strvals"
 	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
 
 	"github.com/operator-framework/helm-operator-plugins/pkg/values"
@@ -33,9 +33,9 @@ var DefaultWaitForDeletionTimeout = 30 * time.Second
 
 var DefaultMaxReleaseHistory = 10
 
-var DefaultMapper = values.MapperFunc(func(v chartutil.Values) chartutil.Values { return v })
+var DefaultMapper = values.MapperFunc(func(v common.Values) common.Values { return v })
 
-var DefaultTranslator = values.TranslatorFunc(func(_ context.Context, u *unstructured.Unstructured) (chartutil.Values, error) {
+var DefaultTranslator = values.TranslatorFunc(func(_ context.Context, u *unstructured.Unstructured) (common.Values, error) {
 	return getSpecMap(u)
 })
 

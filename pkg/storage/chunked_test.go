@@ -9,8 +9,9 @@ import (
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
 
-	"helm.sh/helm/v3/pkg/release"
-	"helm.sh/helm/v3/pkg/storage/driver"
+	release "helm.sh/helm/v4/pkg/release/v1"
+	relcommon "helm.sh/helm/v4/pkg/release/common"
+	"helm.sh/helm/v4/pkg/storage/driver"
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/util/rand"
@@ -40,51 +41,51 @@ var _ = Describe("chunkedSecrets", func() {
 
 	var _ = Describe("Create", func() {
 		It("should create a large release with multiple secrets", func() {
-			rel := genRelease("test-release", 1, release.StatusPendingInstall, nil, chunkSize*2)
+			rel := genRelease("test-release", 1, relcommon.StatusPendingInstall, nil, chunkSize*2)
 			Expect(chunkedDriver.Create(releaseKey(rel), rel)).To(Succeed())
 			verifySecrets(secretInterface, 2)
 		})
 		It("should create a small release with a single secret", func() {
-			rel := genRelease("test-release", 1, release.StatusPendingInstall, nil, chunkSize/2)
+			rel := genRelease("test-release", 1, relcommon.StatusPendingInstall, nil, chunkSize/2)
 			Expect(chunkedDriver.Create(releaseKey(rel), rel)).To(Succeed())
 			verifySecrets(secretInterface, 1)
 		})
 		It("should fail if the release already exists", func() {
-			rel := genRelease("test-release", 1, release.StatusPendingInstall, nil, chunkSize/2)
+			rel := genRelease("test-release", 1, relcommon.StatusPendingInstall, nil, chunkSize/2)
 			Expect(chunkedDriver.Create(releaseKey(rel), rel)).To(Succeed())
 
 			// Change the status to produce a release with the same key, but different content.
-			rel.Info.Status = release.StatusDeployed
+			rel.Info.Status = relcommon.StatusDeployed
 			Expect(chunkedDriver.Create(releaseKey(rel), rel)).To(MatchError(driver.ErrReleaseExists))
 		})
 		It("should fail if the release is too large", func() {
-			rel := genRelease("test-release", 1, release.StatusPendingInstall, nil, chunkSize*4)
+			rel := genRelease("test-release", 1, relcommon.StatusPendingInstall, nil, chunkSize*4)
 			Expect(chunkedDriver.Create(releaseKey(rel), rel)).To(MatchError(ContainSubstring("release too large")))
 		})
 	})
 
 	var _ = Describe("Get", func() {
 		It("should get a large release that is chunked", func() {
-			expected := genRelease("test-release", 1, release.StatusPendingInstall, nil, chunkSize*2)
+			expected := genRelease("test-release", 1, relcommon.StatusPendingInstall, nil, chunkSize*2)
 			Expect(chunkedDriver.Create(releaseKey(expected), expected)).To(Succeed())
 			actual, err := chunkedDriver.Get(releaseKey(expected))
 			Expect(err).ToNot(HaveOccurred())
 			Expect(actual).To(Equal(expected))
 		})
 		It("should get a small release that is not chunked", func() {
-			expected := genRelease("test-release", 1, release.StatusPendingInstall, nil, chunkSize/2)
+			expected := genRelease("test-release", 1, relcommon.StatusPendingInstall, nil, chunkSize/2)
 			Expect(chunkedDriver.Create(releaseKey(expected), expected)).To(Succeed())
 			actual, err := chunkedDriver.Get(releaseKey(expected))
 			Expect(err).ToNot(HaveOccurred())
 			Expect(actual).To(Equal(expected))
 		})
 		It("should fail if the release does not exist", func() {
-			rel := genRelease("test-release", 1, release.StatusPendingInstall, nil, chunkSize/2)
+			rel := genRelease("test-release", 1, relcommon.StatusPendingInstall, nil, chunkSize/2)
 			_, err := chunkedDriver.Get(releaseKey(rel))
 			Expect(err).To(MatchError(driver.ErrReleaseNotFound))
 		})
 		It("should fail if the release is too large", func() {
-			rel := genRelease("test-release", 1, release.StatusPendingInstall, nil, chunkSize*2)
+			rel := genRelease("test-release", 1, relcommon.StatusPendingInstall, nil, chunkSize*2)
 			Expect(chunkedDriver.Create(releaseKey(rel), rel)).To(Succeed())
 
 			maxReadDriver := NewChunkedSecrets(secretInterface, "test-owner", ChunkedSecretsConfig{
@@ -99,44 +100,44 @@ var _ = Describe("chunkedSecrets", func() {
 
 	var _ = Describe("Update", func() {
 		It("should update a single-secret release to a multi-secret release", func() {
-			rel := genRelease("test-release", 1, release.StatusPendingInstall, nil, chunkSize/2)
+			rel := genRelease("test-release", 1, relcommon.StatusPendingInstall, nil, chunkSize/2)
 			Expect(chunkedDriver.Create(releaseKey(rel), rel)).To(Succeed())
 			verifySecrets(secretInterface, 1)
 
 			// Change the status to produce a release with the same key, but different content.
-			rel = genRelease("test-release", 1, release.StatusDeployed, nil, chunkSize*2)
+			rel = genRelease("test-release", 1, relcommon.StatusDeployed, nil, chunkSize*2)
 			Expect(chunkedDriver.Update(releaseKey(rel), rel)).To(Succeed())
 			verifySecrets(secretInterface, 2)
 		})
 		It("should update a multi-secret release to a single-secret release", func() {
-			rel := genRelease("test-release", 1, release.StatusPendingInstall, nil, chunkSize*2)
+			rel := genRelease("test-release", 1, relcommon.StatusPendingInstall, nil, chunkSize*2)
 			Expect(chunkedDriver.Create(releaseKey(rel), rel)).To(Succeed())
 			verifySecrets(secretInterface, 2)
 
 			// Change the status to produce a release with the same key, but different content.
-			rel = genRelease("test-release", 1, release.StatusDeployed, nil, chunkSize/2)
+			rel = genRelease("test-release", 1, relcommon.StatusDeployed, nil, chunkSize/2)
 			Expect(chunkedDriver.Update(releaseKey(rel), rel)).To(Succeed())
 			verifySecrets(secretInterface, 1)
 		})
 		It("should fail if the release does not exist", func() {
-			rel := genRelease("test-release", 1, release.StatusPendingInstall, nil, chunkSize/2)
+			rel := genRelease("test-release", 1, relcommon.StatusPendingInstall, nil, chunkSize/2)
 			Expect(chunkedDriver.Update(releaseKey(rel), rel)).To(MatchError(driver.ErrReleaseNotFound))
 		})
 
 		It("should fail if the release is too large", func() {
-			rel := genRelease("test-release", 1, release.StatusPendingInstall, nil, chunkSize*2)
+			rel := genRelease("test-release", 1, relcommon.StatusPendingInstall, nil, chunkSize*2)
 			Expect(chunkedDriver.Create(releaseKey(rel), rel)).To(Succeed())
 			verifySecrets(secretInterface, 2)
 
 			// Change the status to produce a release with the same key, but different content.
-			rel = genRelease("test-release", 1, release.StatusDeployed, nil, chunkSize*4)
+			rel = genRelease("test-release", 1, relcommon.StatusDeployed, nil, chunkSize*4)
 			Expect(chunkedDriver.Update(releaseKey(rel), rel)).To(MatchError(ContainSubstring("release too large")))
 		})
 	})
 
 	var _ = Describe("Delete", func() {
 		It("should delete a multi-secret release", func() {
-			expected := genRelease("test-release", 1, release.StatusPendingInstall, nil, chunkSize*2)
+			expected := genRelease("test-release", 1, relcommon.StatusPendingInstall, nil, chunkSize*2)
 			Expect(chunkedDriver.Create(releaseKey(expected), expected)).To(Succeed())
 			verifySecrets(secretInterface, 2)
 
@@ -146,7 +147,7 @@ var _ = Describe("chunkedSecrets", func() {
 			verifySecrets(secretInterface, 0)
 		})
 		It("should delete a single-secret release", func() {
-			expected := genRelease("test-release", 1, release.StatusPendingInstall, nil, chunkSize/2)
+			expected := genRelease("test-release", 1, relcommon.StatusPendingInstall, nil, chunkSize/2)
 			Expect(chunkedDriver.Create(releaseKey(expected), expected)).To(Succeed())
 			verifySecrets(secretInterface, 1)
 
@@ -156,12 +157,12 @@ var _ = Describe("chunkedSecrets", func() {
 			verifySecrets(secretInterface, 0)
 		})
 		It("should fail if the release does not exist", func() {
-			rel := genRelease("test-release", 1, release.StatusPendingInstall, nil, chunkSize/2)
+			rel := genRelease("test-release", 1, relcommon.StatusPendingInstall, nil, chunkSize/2)
 			_, err := chunkedDriver.Delete(releaseKey(rel))
 			Expect(err).To(MatchError(driver.ErrReleaseNotFound))
 		})
 		It("should fail if the release is too large", func() {
-			rel := genRelease("test-release", 1, release.StatusPendingInstall, nil, chunkSize*2)
+			rel := genRelease("test-release", 1, relcommon.StatusPendingInstall, nil, chunkSize*2)
 			Expect(chunkedDriver.Create(releaseKey(rel), rel)).To(Succeed())
 
 			maxReadDriver := NewChunkedSecrets(secretInterface, "test-owner", ChunkedSecretsConfig{
@@ -178,14 +179,14 @@ var _ = Describe("chunkedSecrets", func() {
 	var _ = Describe("List", func() {
 		BeforeEach(func() {
 			releases := []*release.Release{
-				genRelease("a", 1, release.StatusSuperseded, nil, chunkSize/2),
-				genRelease("a", 2, release.StatusSuperseded, nil, chunkSize/2),
-				genRelease("a", 3, release.StatusSuperseded, nil, chunkSize*2),
-				genRelease("a", 4, release.StatusDeployed, nil, chunkSize*2),
+				genRelease("a", 1, relcommon.StatusSuperseded, nil, chunkSize/2),
+				genRelease("a", 2, relcommon.StatusSuperseded, nil, chunkSize/2),
+				genRelease("a", 3, relcommon.StatusSuperseded, nil, chunkSize*2),
+				genRelease("a", 4, relcommon.StatusDeployed, nil, chunkSize*2),
 
-				genRelease("b", 1, release.StatusSuperseded, nil, chunkSize*2),
-				genRelease("b", 2, release.StatusSuperseded, nil, chunkSize*2),
-				genRelease("b", 3, release.StatusDeployed, nil, chunkSize/2),
+				genRelease("b", 1, relcommon.StatusSuperseded, nil, chunkSize*2),
+				genRelease("b", 2, relcommon.StatusSuperseded, nil, chunkSize*2),
+				genRelease("b", 3, relcommon.StatusDeployed, nil, chunkSize/2),
 			}
 			for _, rel := range releases {
 				Expect(chunkedDriver.Create(releaseKey(rel), rel)).To(Succeed())
@@ -201,7 +202,7 @@ var _ = Describe("chunkedSecrets", func() {
 
 		It("should list releases by status", func() {
 			deployedReleases, err := chunkedDriver.List(func(rel *release.Release) bool {
-				return rel.Info.Status == release.StatusDeployed
+				return rel.Info.Status == relcommon.StatusDeployed
 			})
 			Expect(err).ToNot(HaveOccurred())
 			Expect(deployedReleases).To(HaveLen(2))
@@ -230,14 +231,14 @@ var _ = Describe("chunkedSecrets", func() {
 	var _ = Describe("Query", func() {
 		BeforeEach(func() {
 			releases := []*release.Release{
-				genRelease("a", 1, release.StatusSuperseded, nil, chunkSize/2),
-				genRelease("a", 2, release.StatusSuperseded, nil, chunkSize/2),
-				genRelease("a", 3, release.StatusSuperseded, nil, chunkSize*2),
-				genRelease("a", 4, release.StatusDeployed, nil, chunkSize*2),
+				genRelease("a", 1, relcommon.StatusSuperseded, nil, chunkSize/2),
+				genRelease("a", 2, relcommon.StatusSuperseded, nil, chunkSize/2),
+				genRelease("a", 3, relcommon.StatusSuperseded, nil, chunkSize*2),
+				genRelease("a", 4, relcommon.StatusDeployed, nil, chunkSize*2),
 
-				genRelease("b", 1, release.StatusSuperseded, nil, chunkSize*2),
-				genRelease("b", 2, release.StatusSuperseded, nil, chunkSize*2),
-				genRelease("b", 3, release.StatusDeployed, map[string]string{"key1": "val1"}, chunkSize/2),
+				genRelease("b", 1, relcommon.StatusSuperseded, nil, chunkSize*2),
+				genRelease("b", 2, relcommon.StatusSuperseded, nil, chunkSize*2),
+				genRelease("b", 3, relcommon.StatusDeployed, map[string]string{"key1": "val1"}, chunkSize/2),
 			}
 			for _, rel := range releases {
 				Expect(chunkedDriver.Create(releaseKey(rel), rel)).To(Succeed())
@@ -331,7 +332,7 @@ func releaseKey(rel *release.Release) string {
 	return fmt.Sprintf("%s.v%d", rel.Name, rel.Version)
 }
 
-func genRelease(name string, version int, status release.Status, extraLabels map[string]string, minSize int) *release.Release {
+func genRelease(name string, version int, status relcommon.Status, extraLabels map[string]string, minSize int) *release.Release {
 	lbls := map[string]string{
 		"globalKey": "globalValue",
 	}

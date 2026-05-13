@@ -24,10 +24,11 @@ import (
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
 
-	"helm.sh/helm/v3/pkg/action"
-	"helm.sh/helm/v3/pkg/kube"
-	"helm.sh/helm/v3/pkg/release"
-	"helm.sh/helm/v3/pkg/storage/driver"
+	"helm.sh/helm/v4/pkg/action"
+	"helm.sh/helm/v4/pkg/kube"
+	release "helm.sh/helm/v4/pkg/release/v1"
+	relcommon "helm.sh/helm/v4/pkg/release/common"
+	"helm.sh/helm/v4/pkg/storage/driver"
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/meta"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -207,7 +208,7 @@ metadata:
 				ac, err := acg.ActionConfigFor(context.Background(), testObject("test1"))
 				Expect(err).ToNot(HaveOccurred())
 
-				expected := &release.Release{Name: "test1", Version: 2, Info: &release.Info{Status: release.StatusDeployed}}
+				expected := &release.Release{Name: "test1", Version: 2, Info: &release.Info{Status: relcommon.StatusDeployed}}
 				Expect(ac.Releases.Create(expected)).To(Succeed())
 				actual, err := storageDriver.List(func(_ *release.Release) bool { return true })
 				Expect(err).ToNot(HaveOccurred())

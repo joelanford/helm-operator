@@ -42,7 +42,7 @@ package annotation
 import (
 	"strconv"
 
-	"helm.sh/helm/v3/pkg/action"
+	"helm.sh/helm/v4/pkg/action"
 
 	helmclient "github.com/operator-framework/helm-operator-plugins/pkg/client"
 )

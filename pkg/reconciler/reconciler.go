@@ -26,11 +26,12 @@ import (
 
 	"github.com/go-logr/logr"
 	errs "github.com/pkg/errors"
-	"helm.sh/helm/v3/pkg/action"
-	"helm.sh/helm/v3/pkg/chart"
-	"helm.sh/helm/v3/pkg/chartutil"
-	"helm.sh/helm/v3/pkg/release"
-	"helm.sh/helm/v3/pkg/storage/driver"
+	"helm.sh/helm/v4/pkg/action"
+	chart "helm.sh/helm/v4/pkg/chart/v2"
+	"helm.sh/helm/v4/pkg/chart/common"
+	release "helm.sh/helm/v4/pkg/release/v1"
+	relcommon "helm.sh/helm/v4/pkg/release/common"
+	"helm.sh/helm/v4/pkg/storage/driver"
 	corev1 "k8s.io/api/core/v1"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -739,18 +740,18 @@ func (r *Reconciler) Reconcile(ctx context.Context, req ctrl.Request) (_ ctrl.Re
 	return ctrl.Result{RequeueAfter: r.reconcilePeriod}, nil
 }
 
-func (r *Reconciler) getValues(ctx context.Context, obj *unstructured.Unstructured) (chartutil.Values, error) {
+func (r *Reconciler) getValues(ctx context.Context, obj *unstructured.Unstructured) (common.Values, error) {
 	if err := internalvalues.ApplyOverrides(r.overrideValues, obj); err != nil {
-		return chartutil.Values{}, err
+		return common.Values{}, err
 	}
 	vals, err := r.valueTranslator.Translate(ctx, obj)
 	if err != nil {
-		return chartutil.Values{}, err
+		return common.Values{}, err
 	}
 	vals = r.valueMapper.Map(vals)
-	vals, err = chartutil.CoalesceValues(r.chrt, vals)
+	vals, err = common.CoalesceValues(r.chrt, vals)
 	if err != nil {
-		return chartutil.Values{}, err
+		return common.Values{}, err
 	}
 	return vals, nil
 }
@@ -832,8 +833,8 @@ func (r *Reconciler) getReleaseState(client helmclient.ActionInterface, obj meta
 		return currentRelease, stateError, err
 	}
 	if specRelease.Manifest != currentRelease.Manifest ||
-		currentRelease.Info.Status == release.StatusFailed ||
-		currentRelease.Info.Status == release.StatusSuperseded {
+		currentRelease.Info.Status == relcommon.StatusFailed ||
+		currentRelease.Info.Status == relcommon.StatusSuperseded {
 		return currentRelease, stateNeedsUpgrade, nil
 	}
 	return currentRelease, stateUnchanged, nil

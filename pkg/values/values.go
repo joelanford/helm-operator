@@ -19,7 +19,7 @@ package values
 import (
 	"context"
 
-	"helm.sh/helm/v3/pkg/chartutil"
+	"helm.sh/helm/v4/pkg/chart/common"
 	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
 )
 
@@ -27,12 +27,12 @@ import (
 //
 // Deprecated: use Translator instead.
 type Mapper interface {
-	Map(chartutil.Values) chartutil.Values
+	Map(common.Values) common.Values
 }
 
-type MapperFunc func(chartutil.Values) chartutil.Values
+type MapperFunc func(common.Values) common.Values
 
-func (m MapperFunc) Map(v chartutil.Values) chartutil.Values {
+func (m MapperFunc) Map(v common.Values) common.Values {
 	return m(v)
 }
 
@@ -43,12 +43,12 @@ func (m MapperFunc) Map(v chartutil.Values) chartutil.Values {
 //
 // See also the option documentation.
 type Translator interface {
-	Translate(ctx context.Context, unstructured *unstructured.Unstructured) (chartutil.Values, error)
+	Translate(ctx context.Context, unstructured *unstructured.Unstructured) (common.Values, error)
 }
 
 // TranslatorFunc is a helper type for passing a function as a Translator.
-type TranslatorFunc func(context.Context, *unstructured.Unstructured) (chartutil.Values, error)
+type TranslatorFunc func(context.Context, *unstructured.Unstructured) (common.Values, error)
 
-func (t TranslatorFunc) Translate(ctx context.Context, u *unstructured.Unstructured) (chartutil.Values, error) {
+func (t TranslatorFunc) Translate(ctx context.Context, u *unstructured.Unstructured) (common.Values, error) {
 	return t(ctx, u)
 }

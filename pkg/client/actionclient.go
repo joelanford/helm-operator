@@ -22,14 +22,16 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"slices"
 
 	"gomodules.xyz/jsonpatch/v2"
-	"helm.sh/helm/v3/pkg/action"
-	"helm.sh/helm/v3/pkg/chart"
-	helmkube "helm.sh/helm/v3/pkg/kube"
-	"helm.sh/helm/v3/pkg/release"
-	"helm.sh/helm/v3/pkg/releaseutil"
-	"helm.sh/helm/v3/pkg/storage/driver"
+	internalrelease "github.com/operator-framework/helm-operator-plugins/pkg/internal/release"
+	"helm.sh/helm/v4/pkg/action"
+	chart "helm.sh/helm/v4/pkg/chart/v2"
+	helmkube "helm.sh/helm/v4/pkg/kube"
+	helmrelease "helm.sh/helm/v4/pkg/release"
+	release "helm.sh/helm/v4/pkg/release/v1"
+	"helm.sh/helm/v4/pkg/storage/driver"
 	apiextensionsv1 "k8s.io/apiextensions-apiserver/pkg/apis/apiextensions/v1"
 	apiextv1beta1 "k8s.io/apiextensions-apiserver/pkg/apis/apiextensions/v1beta1"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
@@ -56,7 +58,7 @@ type ActionInterface interface {
 	History(name string, opts ...HistoryOption) ([]*release.Release, error)
 	Install(name, namespace string, chrt *chart.Chart, vals map[string]interface{}, opts ...InstallOption) (*release.Release, error)
 	Upgrade(name, namespace string, chrt *chart.Chart, vals map[string]interface{}, opts ...UpgradeOption) (*release.Release, error)
-	Uninstall(name string, opts ...UninstallOption) (*release.UninstallReleaseResponse, error)
+	Uninstall(name string, opts ...UninstallOption) (*helmrelease.UninstallReleaseResponse, error)
 	Reconcile(rel *release.Release) error
 	Config() *action.Configuration
 }
@@ -225,7 +227,15 @@ func (c *actionClient) Get(name string, opts ...GetOption) (*release.Release, er
 			return nil, err
 		}
 	}
-	return get.Run(name)
+	rel, err := get.Run(name)
+	if err != nil {
+		return nil, err
+	}
+	typedRel, err := internalrelease.ToV1(rel)
+	if err != nil {
+		return nil, err
+	}
+	return typedRel, nil
 }
 
 // History returns the release history for a given release name. The releases are sorted
@@ -241,8 +251,20 @@ func (c *actionClient) History(name string, opts ...HistoryOption) ([]*release.R
 	if err != nil {
 		return nil, err
 	}
-	releaseutil.Reverse(rels, releaseutil.SortByRevision)
-	return rels, nil
+	typedRels, err := internalrelease.SliceToV1(rels)
+	if err != nil {
+		return nil, err
+	}
+	slices.SortFunc(typedRels, func(a, b *release.Release) int {
+		if a.Version > b.Version {
+			return -1
+		}
+		if a.Version < b.Version {
+			return 1
+		}
+		return 0
+	})
+	return typedRels, nil
 }
 
 func (c *actionClient) Install(name, namespace string, chrt *chart.Chart, vals map[string]interface{}, opts ...InstallOption) (*release.Release, error) {
@@ -254,10 +276,12 @@ func (c *actionClient) Install(name, namespace string, chrt *chart.Chart, vals m
 	}
 	install.ReleaseName = name
 	install.Namespace = namespace
-	c.conf.Log("Starting install")
-	rel, err := install.Run(chrt, vals)
-	if err != nil {
-		c.conf.Log("Install failed")
+	relIface, installErr := install.RunWithContext(context.Background(), chrt, vals)
+	rel, convErr := internalrelease.ToV1(relIface)
+	if convErr != nil {
+		return nil, convErr
+	}
+	if installErr != nil {
 		if c.enableFailureRollbacks && rel != nil {
 			// Uninstall the failed release installation so that we can retry
 			// the installation again during the next reconciliation. In many
@@ -274,10 +298,10 @@ func (c *actionClient) Install(name, namespace string, chrt *chart.Chart, vals m
 			// caused by something other than the release not being found.
 			_, uninstallErr := c.uninstall(name, c.installFailureUninstallOpts...)
 			if uninstallErr != nil && !errors.Is(uninstallErr, driver.ErrReleaseNotFound) {
-				return nil, fmt.Errorf("uninstall failed: %v: original install error: %w", uninstallErr, err)
+				return nil, fmt.Errorf("uninstall failed: %v: original install error: %w", uninstallErr, installErr)
 			}
 		}
-		return rel, err
+		return rel, installErr
 	}
 	return rel, nil
 }
@@ -290,11 +314,15 @@ func (c *actionClient) Upgrade(name, namespace string, chrt *chart.Chart, vals m
 		}
 	}
 	upgrade.Namespace = namespace
-	rel, err := upgrade.Run(name, chrt, vals)
-	if err != nil {
+	relIface, upgradeErr := upgrade.RunWithContext(context.Background(), name, chrt, vals)
+	rel, convErr := internalrelease.ToV1(relIface)
+	if convErr != nil {
+		return nil, convErr
+	}
+	if upgradeErr != nil {
 		if c.enableFailureRollbacks && rel != nil {
 			rollbackOpts := append([]RollbackOption{func(rollback *action.Rollback) error {
-				rollback.Force = true
+				rollback.ForceReplace = true
 				rollback.MaxHistory = upgrade.MaxHistory
 				return nil
 			}}, c.upgradeFailureRollbackOpts...)
@@ -306,10 +334,10 @@ func (c *actionClient) Upgrade(name, namespace string, chrt *chart.Chart, vals m
 			// log both the update and rollback errors.
 			rollbackErr := c.rollback(name, rollbackOpts...)
 			if rollbackErr != nil {
-				return nil, fmt.Errorf("rollback failed: %v: original upgrade error: %w", rollbackErr, err)
+				return nil, fmt.Errorf("rollback failed: %v: original upgrade error: %w", rollbackErr, upgradeErr)
 			}
 		}
-		return rel, err
+		return rel, upgradeErr
 	}
 	return rel, nil
 }
@@ -324,11 +352,11 @@ func (c *actionClient) rollback(name string, opts ...RollbackOption) error {
 	return rollback.Run(name)
 }
 
-func (c *actionClient) Uninstall(name string, opts ...UninstallOption) (*release.UninstallReleaseResponse, error) {
+func (c *actionClient) Uninstall(name string, opts ...UninstallOption) (*helmrelease.UninstallReleaseResponse, error) {
 	return c.uninstall(name, concat(c.defaultUninstallOpts, opts...)...)
 }
 
-func (c *actionClient) uninstall(name string, opts ...UninstallOption) (*release.UninstallReleaseResponse, error) {
+func (c *actionClient) uninstall(name string, opts ...UninstallOption) (*helmrelease.UninstallReleaseResponse, error) {
 	uninstall := action.NewUninstall(c.conf)
 	for _, o := range opts {
 		if err := o(uninstall); err != nil {

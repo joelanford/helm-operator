@@ -31,12 +31,13 @@ import (
 	. "github.com/onsi/gomega/gstruct"
 
 	"github.com/go-logr/logr"
-	"helm.sh/helm/v3/pkg/action"
-	"helm.sh/helm/v3/pkg/chart"
-	"helm.sh/helm/v3/pkg/chartutil"
-	"helm.sh/helm/v3/pkg/release"
-	"helm.sh/helm/v3/pkg/releaseutil"
-	"helm.sh/helm/v3/pkg/storage/driver"
+	"helm.sh/helm/v4/pkg/action"
+	chart "helm.sh/helm/v4/pkg/chart/v2"
+	"helm.sh/helm/v4/pkg/chart/common"
+	release "helm.sh/helm/v4/pkg/release/v1"
+	relcommon "helm.sh/helm/v4/pkg/release/common"
+	relutil "helm.sh/helm/v4/pkg/release/v1/util"
+	"helm.sh/helm/v4/pkg/storage/driver"
 	corev1 "k8s.io/api/core/v1"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -400,7 +401,7 @@ var _ = Describe("Reconciler", func() {
 		_ = Describe("WithPreHook", func() {
 			It("should set a reconciler prehook", func() {
 				called := false
-				preHook := hook.PreHookFunc(func(*unstructured.Unstructured, chartutil.Values, logr.Logger) error {
+				preHook := hook.PreHookFunc(func(*unstructured.Unstructured, common.Values, logr.Logger) error {
 					called = true
 					return nil
 				})
@@ -425,22 +426,22 @@ var _ = Describe("Reconciler", func() {
 		})
 		_ = Describe("WithValueMapper", func() {
 			It("should set the reconciler value mapper", func() {
-				mapper := values.MapperFunc(func(chartutil.Values) chartutil.Values {
-					return chartutil.Values{"mapped": true}
+				mapper := values.MapperFunc(func(common.Values) common.Values {
+					return common.Values{"mapped": true}
 				})
 				Expect(WithValueMapper(mapper)(r)).To(Succeed())
 				Expect(r.valueMapper).NotTo(BeNil())
-				Expect(r.valueMapper.Map(chartutil.Values{})).To(Equal(chartutil.Values{"mapped": true}))
+				Expect(r.valueMapper.Map(common.Values{})).To(Equal(common.Values{"mapped": true}))
 			})
 		})
 		_ = Describe("WithValueTranslator", func() {
 			It("should set the reconciler value translator", func() {
-				translator := values.TranslatorFunc(func(_ context.Context, _ *unstructured.Unstructured) (chartutil.Values, error) {
-					return chartutil.Values{"translated": true}, nil
+				translator := values.TranslatorFunc(func(_ context.Context, _ *unstructured.Unstructured) (common.Values, error) {
+					return common.Values{"translated": true}, nil
 				})
 				Expect(WithValueTranslator(translator)(r)).To(Succeed())
 				Expect(r.valueTranslator).NotTo(BeNil())
-				Expect(r.valueTranslator.Translate(context.Background(), &unstructured.Unstructured{})).To(Equal(chartutil.Values{"translated": true}))
+				Expect(r.valueTranslator.Translate(context.Background(), &unstructured.Unstructured{})).To(Equal(common.Values{"translated": true}))
 			})
 		})
 		_ = Describe("WithSelector", func() {
@@ -1051,7 +1052,7 @@ var _ = Describe("Reconciler", func() {
 					})
 					When("value translator fails", func() {
 						BeforeEach(func() {
-							r.valueTranslator = values.TranslatorFunc(func(_ context.Context, _ *unstructured.Unstructured) (chartutil.Values, error) {
+							r.valueTranslator = values.TranslatorFunc(func(_ context.Context, _ *unstructured.Unstructured) (common.Values, error) {
 								return nil, errors.New("translation failure")
 							})
 						})
@@ -1100,7 +1101,7 @@ var _ = Describe("Reconciler", func() {
 						})
 						When("state is Failed", func() {
 							BeforeEach(func() {
-								currentRelease.Info.Status = release.StatusFailed
+								currentRelease.Info.Status = relcommon.StatusFailed
 								Expect(actionConf.Releases.Update(currentRelease)).To(Succeed())
 							})
 							It("upgrades the release", func() {
@@ -1120,7 +1121,7 @@ var _ = Describe("Reconciler", func() {
 						})
 						When("state is Superseded", func() {
 							BeforeEach(func() {
-								currentRelease.Info.Status = release.StatusSuperseded
+								currentRelease.Info.Status = relcommon.StatusSuperseded
 								Expect(actionConf.Releases.Update(currentRelease)).To(Succeed())
 							})
 							It("upgrades the release", func() {
@@ -1250,10 +1251,10 @@ var _ = Describe("Reconciler", func() {
 							BeforeEach(func() {
 								ac := helmfake.NewActionClient()
 								ac.HandleGet = func() (*release.Release, error) {
-									return &release.Release{Name: "test", Version: 1, Manifest: "manifest: 1", Info: &release.Info{Status: release.StatusDeployed}}, nil
+									return &release.Release{Name: "test", Version: 1, Manifest: "manifest: 1", Info: &release.Info{Status: relcommon.StatusDeployed}}, nil
 								}
 								ac.HandleUpgrade = func() (*release.Release, error) {
-									return &release.Release{Name: "test", Version: 2, Manifest: "manifest: 1", Info: &release.Info{Status: release.StatusDeployed}}, nil
+									return &release.Release{Name: "test", Version: 2, Manifest: "manifest: 1", Info: &release.Info{Status: relcommon.StatusDeployed}}, nil
 								}
 								ac.HandleReconcile = func() error {
 									return errors.New("reconciliation failed: foobar")
@@ -1761,7 +1762,7 @@ type objStatus struct {
 
 func manifestToObjects(manifest string) []client.Object {
 	objs := []client.Object{}
-	for _, m := range releaseutil.SplitManifests(manifest) {
+	for _, m := range relutil.SplitManifests(manifest) {
 		u := &unstructured.Unstructured{}
 		err := yaml.Unmarshal([]byte(m), u)
 		Expect(err).ToNot(HaveOccurred())
@@ -1832,7 +1833,7 @@ func verifyNoRelease(ctx context.Context, cl client.Client, ns string, name stri
 	})
 	By("verifying all release resources are removed", func() {
 		if rel != nil {
-			for _, r := range releaseutil.SplitManifests(rel.Manifest) {
+			for _, r := range relutil.SplitManifests(rel.Manifest) {
 				u := &unstructured.Unstructured{}
 				err := yaml.Unmarshal([]byte(r), u)
 				Expect(err).ToNot(HaveOccurred())
@@ -1848,7 +1849,7 @@ func verifyNoRelease(ctx context.Context, cl client.Client, ns string, name stri
 func verifyHooksCalled(ctx context.Context, r *Reconciler, req reconcile.Request) {
 	buf := &bytes.Buffer{}
 	By("setting up a pre and post hook", func() {
-		preHook := hook.PreHookFunc(func(*unstructured.Unstructured, chartutil.Values, logr.Logger) error {
+		preHook := hook.PreHookFunc(func(*unstructured.Unstructured, common.Values, logr.Logger) error {
 			return errors.New("pre hook foobar")
 		})
 		postHook := hook.PostHookFunc(func(*unstructured.Unstructured, release.Release, logr.Logger) error {

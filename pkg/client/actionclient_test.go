@@ -27,13 +27,14 @@ import (
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
 
-	"helm.sh/helm/v3/pkg/action"
-	"helm.sh/helm/v3/pkg/chartutil"
-	"helm.sh/helm/v3/pkg/kube"
-	"helm.sh/helm/v3/pkg/postrender"
-	"helm.sh/helm/v3/pkg/release"
-	"helm.sh/helm/v3/pkg/releaseutil"
-	"helm.sh/helm/v3/pkg/storage/driver"
+	"helm.sh/helm/v4/pkg/action"
+	"helm.sh/helm/v4/pkg/chart/common"
+	"helm.sh/helm/v4/pkg/kube"
+	"helm.sh/helm/v4/pkg/postrenderer"
+	release "helm.sh/helm/v4/pkg/release/v1"
+	relcommon "helm.sh/helm/v4/pkg/release/common"
+	relutil "helm.sh/helm/v4/pkg/release/v1/util"
+	"helm.sh/helm/v4/pkg/storage/driver"
 	appsv1 "k8s.io/api/apps/v1"
 	corev1 "k8s.io/api/core/v1"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
@@ -162,7 +163,7 @@ var _ = Describe("ActionClient", func() {
 				Expect(err).ToNot(HaveOccurred())
 				Expect(ac).NotTo(BeNil())
 
-				_, err = ac.Install(obj.GetName(), obj.GetNamespace(), &chrt, chartutil.Values{})
+				_, err = ac.Install(obj.GetName(), obj.GetNamespace(), &chrt, common.Values{})
 				Expect(err).To(MatchError(expectErr))
 			})
 			It("should get clients with custom upgrade options", func() {
@@ -183,7 +184,7 @@ var _ = Describe("ActionClient", func() {
 				Expect(err).ToNot(HaveOccurred())
 				Expect(ac).NotTo(BeNil())
 
-				_, err = ac.Upgrade(obj.GetName(), obj.GetNamespace(), &chrt, chartutil.Values{})
+				_, err = ac.Upgrade(obj.GetName(), obj.GetNamespace(), &chrt, common.Values{})
 				Expect(err).To(MatchError(expectErr))
 			})
 			It("should get clients with custom uninstall options", func() {
@@ -225,7 +226,7 @@ var _ = Describe("ActionClient", func() {
 				Expect(err).ToNot(HaveOccurred())
 				Expect(ac).NotTo(BeNil())
 
-				_, err = ac.Install(obj.GetName(), obj.GetNamespace(), &chrt, chartutil.Values{}, func(install *action.Install) error {
+				_, err = ac.Install(obj.GetName(), obj.GetNamespace(), &chrt, common.Values{}, func(install *action.Install) error {
 					// Force the installatiom to fail by using an impossibly short wait.
 					// When the installation fails, the failure uninstall logic is attempted.
 					install.Wait = true
@@ -258,11 +259,11 @@ var _ = Describe("ActionClient", func() {
 				Expect(ac).NotTo(BeNil())
 
 				// Install the chart so that we can try an upgrade.
-				rel, err := ac.Install(obj.GetName(), obj.GetNamespace(), &chrt, chartutil.Values{})
+				rel, err := ac.Install(obj.GetName(), obj.GetNamespace(), &chrt, common.Values{})
 				Expect(err).ToNot(HaveOccurred())
 				Expect(rel).NotTo(BeNil())
 
-				_, err = ac.Upgrade(obj.GetName(), obj.GetNamespace(), &chrt, chartutil.Values{}, func(upgrade *action.Upgrade) error {
+				_, err = ac.Upgrade(obj.GetName(), obj.GetNamespace(), &chrt, common.Values{}, func(upgrade *action.Upgrade) error {
 					// Force the upgrade to fail by using an impossibly short wait.
 					// When the upgrade fails, the rollback logic is attempted.
 					upgrade.Wait = true
@@ -284,7 +285,7 @@ var _ = Describe("ActionClient", func() {
 				ac, err := acg.ActionClientFor(context.Background(), obj)
 				Expect(err).ToNot(HaveOccurred())
 
-				_, err = ac.Install(obj.GetName(), obj.GetNamespace(), &chrt, chartutil.Values{})
+				_, err = ac.Install(obj.GetName(), obj.GetNamespace(), &chrt, common.Values{})
 				Expect(err).ToNot(HaveOccurred())
 
 				rel, err := ac.Get(obj.GetName())
@@ -349,7 +350,7 @@ var _ = Describe("ActionClient", func() {
 			cl              client.Client
 			actionCfgGetter ActionConfigGetter
 			ac              ActionInterface
-			vals            = chartutil.Values{"service": map[string]interface{}{"type": "NodePort"}}
+			vals            = common.Values{"service": map[string]interface{}{"type": "NodePort"}}
 		)
 		BeforeEach(func() {
 			obj = testutil.BuildTestCR(gvk)
@@ -405,7 +406,7 @@ var _ = Describe("ActionClient", func() {
 				})
 				It("should uninstall a failed install", func() {
 					By("failing to install the release", func() {
-						vals := chartutil.Values{"service": map[string]interface{}{"type": "FooBar"}}
+						vals := common.Values{"service": map[string]interface{}{"type": "FooBar"}}
 						r, err := ac.Install(obj.GetName(), obj.GetNamespace(), &chrt, vals)
 						Expect(err).To(HaveOccurred())
 						Expect(r).NotTo(BeNil())
@@ -420,11 +421,11 @@ var _ = Describe("ActionClient", func() {
 						Expect(err).ToNot(HaveOccurred())
 					})
 					It("should not uninstall a failed install", func() {
-						vals := chartutil.Values{"service": map[string]interface{}{"type": "FooBar"}}
+						vals := common.Values{"service": map[string]interface{}{"type": "FooBar"}}
 						returnedRelease, err := ac.Install(obj.GetName(), obj.GetNamespace(), &chrt, vals)
 						Expect(err).To(HaveOccurred())
 						Expect(returnedRelease).ToNot(BeNil())
-						Expect(returnedRelease.Info.Status).To(Equal(release.StatusFailed))
+						Expect(returnedRelease.Info.Status).To(Equal(relcommon.StatusFailed))
 						latestRelease, err := ac.Get(obj.GetName())
 						Expect(err).ToNot(HaveOccurred())
 						Expect(latestRelease).ToNot(BeNil())
@@ -526,7 +527,7 @@ var _ = Describe("ActionClient", func() {
 						Expect(rels).To(HaveLen(1))
 						Expect(rels[0].Name).To(Equal(obj.GetName()))
 						Expect(rels[0].Version).To(Equal(1))
-						Expect(rels[0].Info.Status).To(Equal(release.StatusDeployed))
+						Expect(rels[0].Info.Status).To(Equal(relcommon.StatusDeployed))
 					})
 				})
 				When("multiple revisions exist", func() {
@@ -541,10 +542,10 @@ var _ = Describe("ActionClient", func() {
 						Expect(rels).To(HaveLen(2))
 						Expect(rels[0].Name).To(Equal(obj.GetName()))
 						Expect(rels[0].Version).To(Equal(2))
-						Expect(rels[0].Info.Status).To(Equal(release.StatusDeployed))
+						Expect(rels[0].Info.Status).To(Equal(relcommon.StatusDeployed))
 						Expect(rels[1].Name).To(Equal(obj.GetName()))
 						Expect(rels[1].Version).To(Equal(1))
-						Expect(rels[1].Info.Status).To(Equal(release.StatusSuperseded))
+						Expect(rels[1].Info.Status).To(Equal(relcommon.StatusSuperseded))
 					})
 				})
 			})
@@ -571,7 +572,7 @@ var _ = Describe("ActionClient", func() {
 				})
 				It("should rollback a failed upgrade", func() {
 					By("failing to upgrade the release", func() {
-						vals := chartutil.Values{"service": map[string]interface{}{"type": "FooBar"}}
+						vals := common.Values{"service": map[string]interface{}{"type": "FooBar"}}
 						r, err := ac.Upgrade(obj.GetName(), obj.GetNamespace(), &chrt, vals)
 						Expect(err).To(HaveOccurred())
 						Expect(r).ToNot(BeNil())
@@ -589,11 +590,11 @@ var _ = Describe("ActionClient", func() {
 						Expect(err).ToNot(HaveOccurred())
 					})
 					It("should not rollback a failed upgrade", func() {
-						vals := chartutil.Values{"service": map[string]interface{}{"type": "FooBar"}}
+						vals := common.Values{"service": map[string]interface{}{"type": "FooBar"}}
 						returnedRelease, err := ac.Upgrade(obj.GetName(), obj.GetNamespace(), &chrt, vals)
 						Expect(err).To(HaveOccurred())
 						Expect(returnedRelease).ToNot(BeNil())
-						Expect(returnedRelease.Info.Status).To(Equal(release.StatusFailed))
+						Expect(returnedRelease.Info.Status).To(Equal(relcommon.StatusFailed))
 						latestRelease, err := ac.Get(obj.GetName())
 						Expect(err).ToNot(HaveOccurred())
 						Expect(latestRelease).ToNot(BeNil())
@@ -859,7 +860,7 @@ var _ = Describe("ActionClient", func() {
 
 func manifestToObjects(manifest string) []client.Object {
 	objs := []client.Object{}
-	for _, m := range releaseutil.SplitManifests(manifest) {
+	for _, m := range relutil.SplitManifests(manifest) {
 		u := &unstructured.Unstructured{}
 		err := yaml.Unmarshal([]byte(m), u)
 		Expect(err).ToNot(HaveOccurred())
@@ -918,7 +919,7 @@ func verifyNoRelease(cl client.Client, ns string, name string, rel *release.Rele
 	})
 	By("verifying all release resources are removed", func() {
 		if rel != nil {
-			for _, r := range releaseutil.SplitManifests(rel.Manifest) {
+			for _, r := range relutil.SplitManifests(rel.Manifest) {
 				u := &unstructured.Unstructured{}
 				err := yaml.Unmarshal([]byte(r), u)
 				Expect(err).ToNot(HaveOccurred())
@@ -971,10 +972,10 @@ type mockPostRenderer struct {
 	value  string
 }
 
-var _ postrender.PostRenderer = &mockPostRenderer{}
+var _ postrenderer.PostRenderer = &mockPostRenderer{}
 
 func newMockPostRenderer(key, value string) PostRendererProvider {
-	return func(_ meta.RESTMapper, kubeClient kube.Interface, _ client.Object) postrender.PostRenderer {
+	return func(_ meta.RESTMapper, kubeClient kube.Interface, _ client.Object) postrenderer.PostRenderer {
 		return &mockPostRenderer{
 			k8sCli: kubeClient,
 			key:    key,

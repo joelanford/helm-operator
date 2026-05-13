@@ -19,12 +19,13 @@ package client
 import (
 	"context"
 	"fmt"
+	"log/slog"
 
 	"github.com/go-logr/logr"
-	"helm.sh/helm/v3/pkg/action"
-	"helm.sh/helm/v3/pkg/kube"
-	"helm.sh/helm/v3/pkg/storage"
-	"helm.sh/helm/v3/pkg/storage/driver"
+	"helm.sh/helm/v4/pkg/action"
+	"helm.sh/helm/v4/pkg/kube"
+	"helm.sh/helm/v4/pkg/storage"
+	"helm.sh/helm/v4/pkg/storage/driver"
 	"k8s.io/apimachinery/pkg/api/meta"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/client-go/discovery"
@@ -168,9 +169,6 @@ func (acg *actionConfigGetter) ActionConfigFor(ctx context.Context, obj client.O
 	clientKC := kube.New(clientRCG)
 	clientKC.Namespace = clientNamespace
 
-	// Setup the debug log function that Helm will use
-	debugLog := getDebugLogger(ctx)
-
 	storageRestConfig, err := acg.objectToStorageRestConfig(ctx, obj, acg.baseRestConfig)
 	if err != nil {
 		return nil, fmt.Errorf("get storage rest config for object: %v", err)
@@ -184,22 +182,21 @@ func (acg *actionConfigGetter) ActionConfigFor(ctx context.Context, obj client.O
 	// Initialize the storage backend
 	s := storage.Init(d)
 
-	return &action.Configuration{
+	cfg := &action.Configuration{
 		RESTClientGetter: clientRCG,
 		Releases:         s,
 		KubeClient:       clientKC,
-		Log:              debugLog,
-	}, nil
+	}
+	cfg.SetLogger(slogHandlerFromContext(ctx))
+	return cfg, nil
 }
 
-func getDebugLogger(ctx context.Context) func(format string, v ...interface{}) {
+func slogHandlerFromContext(ctx context.Context) slog.Handler {
 	logger, err := logr.FromContext(ctx)
 	if err != nil {
-		return func(_ string, _ ...interface{}) {}
+		return slog.DiscardHandler
 	}
-	return func(format string, v ...interface{}) {
-		logger.V(1).Info(fmt.Sprintf(format, v...))
-	}
+	return logr.ToSlogHandler(logger.V(1))
 }
 
 type SecretsStorageDriverOpts struct {
@@ -227,7 +224,7 @@ func DefaultSecretsStorageDriver(opts SecretsStorageDriverOpts) ObjectToStorageD
 			secretClient = NewOwnerRefSecretClient(secretClient, []metav1.OwnerReference{*ownerRef}, MatchAllSecrets)
 		}
 		d := driver.NewSecrets(secretClient)
-		d.Log = getDebugLogger(ctx)
+		d.SetLogger(slogHandlerFromContext(ctx))
 		return d, nil
 	}
 }
